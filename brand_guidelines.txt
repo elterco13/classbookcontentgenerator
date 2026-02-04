@@ -1,0 +1,54 @@
+🟢 Informe de Identidad Visual: My Kiwi Languages
+Este documento sirve como el Master Prompt para asegurar coherencia en futuras generaciones de imágenes.
+
+1. El Protagonista: El "Kiwi" Multicultural
+El centro de toda pieza es el pájaro kiwi. No es un kiwi realista, sino una versión antropomorfizada y estilizada.
+
+Formas: Cuerpo ovoide, pera o circular. El pico es largo, delgado y ligeramente curvado hacia abajo (color madera o naranja claro).
+
+Personalidad: Es un "eterno estudiante" y "viajero". Se adapta al entorno: usa boina de gaucho y toma mate, o usa un sombrero de paja toquilla (Ecuador) y juega con bloques.
+
+Evolución Estética: * Versión Flat: Ojos de punto (minimalistas), colores planos, sin bordes negros (ver imagen 02a, 04).
+
+Versión Storybook: Bordes de tinta definidos, texturas de acuarela o crayón, ojos más expresivos con brillo (ver imagen a0NZ).
+
+2. Estilo Artístico y Formas
+El proyecto maneja una dualidad que debe mantenerse según el mensaje:
+
+Línea Modern/Flat (Educación y Negocios): Estilo vectorial, limpio, geométrico. Uso de "Negative Space" y composiciones equilibradas. Inspirado en el diseño editorial moderno.
+
+Línea Hand-drawn (Cultura y Niños): Ilustración tipo libro infantil. Texturas rugosas, sombreados suaves con pincel de cerdas y líneas de contorno orgánicas.
+
+Geometría: Predominan las curvas amigables. No hay ángulos agresivos; incluso los muebles de oficina (imagen 04) tienen esquinas redondeadas para transmitir accesibilidad.
+
+3. Paleta de Colores (Color Theory)
+La paleta es vibrante pero con propósito:
+
+Azul Marino (Deep Navy): Color de confianza y autoridad académica. Usado en la tipografía principal y en el cuerpo del kiwi en las versiones flat.
+
+Acentos Culturales: * NZ: Negro, blanco y plateado (Silver Fern).
+
+Ecuador/Argentina: Amarillo, azul y rojo (Ecuador); Celeste y blanco (Argentina).
+
+Fondos: Tonos pasteles muy suaves (crema, gris humo, azul cielo pálido) para que los elementos principales "salten" a la vista.
+
+4. Narrativa y Composición
+Cada imagen cuenta una historia de fusión. Nunca es solo NZ o solo Latam; es el encuentro de ambos.
+
+Elementos Clave de Fusión: Mate, termos, banderas, mapas de NZ y Sudamérica entrelazados, ovejas, helechos, llamas y picos montañosos (los Andes vs. Alpes del Sur).
+
+Escenarios: Aulas de clase simplificadas, oficinas modernas con ventanales, o paisajes rurales verdes y minimalistas.
+
+Simbolismo: El uso de globos terráqueos y tablets refuerza que es un aprendizaje moderno y global.
+
+5. Segmentación (Targeting)
+La estética se ajusta sutilmente según el público:
+
+Business/Adults: Colores más sobrios, entornos de oficina, gráficos de crecimiento, ordenadores.
+
+Kids: Colores primarios, bloques de letras (A, B, C), juguetes, sombreros divertidos y una línea de dibujo más "suave".
+
+🤖 Guía de Instrucción para la IA (System Prompt)
+Si quieres que una IA genere una imagen nueva, copia y adapta este bloque:
+
+PROMPT BASE: "Ilustración de estilo [Flat Vector / Storybook Watercolor] para 'My Kiwi Languages'. El protagonista es un pájaro kiwi azul oscuro estilizado con pico largo. La escena debe representar la conexión entre Nueva Zelanda y [País]. Incluir elementos icónicos como [ej: mate y termo / sombrero de paja toquilla]. Colores: Azul marino, [Colores de la bandera del país] sobre fondo neutro claro. Estética: Limpia, educativa, amigable y profesional. Sin texto complejo, composición centrada y equilibrada."

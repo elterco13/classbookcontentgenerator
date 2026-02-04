@@ -19,8 +19,8 @@ Herramienta de automatización para generar contenido de redes sociales (prompts
 
 1. Clona el repositorio:
 ```bash
-git clone https://github.com/TU_USUARIO/content-automation-tool.git
-cd content-automation-tool
+git clone https://github.com/elterco13/classbookcontentgenerator.git
+cd classbookcontentgenerator
 ```
 
 2. Instala las dependencias:

@@ -30,10 +30,15 @@ class ContentGenerator:
            - Extract every distinct post request.
            - For EACH post request, generate 3 COMPLETY DIFFERENT visual approaches (options).
         
-        3. **Distinct Options**:
-           - Option 1: **Literal/Direct Representation**. (Shows exactly what is described).
-           - Option 2: **Metaphorical/Creative**. (Uses symbols or abstract composition to convey the idea).
-           - Option 3: **Lifestyle/Contextual**. (Shows the concept in a real-world or applied context, if applicable).
+        3. **Distinct Options (Strict Styles from Examples)**:
+           - Option 1: **"Soft Watercolor Illustration"**. 
+             * Description: Soft watercolor texture, paper grain effect, cute and approachable, pastel and warm tones. Focus on the character with a dreamy vibe.
+           - Option 2: **"Modern Vector Badge"**. 
+             * Description: Flat vector art, clean bold outlines, sticker aesthetic, simplified geometry, isolated on plain background. Looks like a logo or a die-cut sticker.
+           - Option 3: **"Storybook Scene"**. 
+             * Description: Detailed storybook illustration, narrative scene with full background (e.g., street, room, landscape), hand-drawn quality, whimsical and engaging. High detail.
+
+           - **Crucial**: All 3 options MUST feature the "Kiwi" character (or brand mascot) as the central figure.
            - ALL options must still look like they belong to the same Brand (same colors/fonts/vibe).
 
         Output:

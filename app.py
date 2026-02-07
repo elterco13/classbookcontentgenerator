@@ -102,17 +102,17 @@ if generate_btn and generator and brief:
                     if success:
                         st.image(img_path, caption=f"Opción {i+1}", use_container_width=True)
                         
-                        # Individual Download Button
+                        st.success("Generado")
+                        
+                        # Individual Download Button (Moved for visibility)
                         with open(img_path, "rb") as file:
                             st.download_button(
-                                label="⬇️ Descargar Imagen",
+                                label="⬇️ Descargar",
                                 data=file,
                                 file_name=img_filename,
                                 mime="image/png",
                                 key=f"dl_{post['id']}_{i+1}"
                             )
-
-                        st.success("Generado")
                         
                         # Regeneration UI
                         regen_key = f"regen_{post['id']}_{i+1}"
@@ -135,6 +135,16 @@ if generate_btn and generator and brief:
                                     if regen_success:
                                         st.image(new_path, caption=f"Opción {i+1} - Regenerada", use_container_width=True)
                                         st.success("✅ Imagen regenerada")
+                                        
+                                        # Download for Regenerated Image
+                                        with open(new_path, "rb") as file_v2:
+                                            st.download_button(
+                                                label="⬇️ Descargar (V2)",
+                                                data=file_v2,
+                                                file_name=new_filename,
+                                                mime="image/png",
+                                                key=f"dl_v2_{regen_key}"
+                                            )
                                         
                                         log_data.append({
                                             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

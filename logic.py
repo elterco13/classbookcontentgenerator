@@ -22,15 +22,20 @@ class ContentGenerator:
         Your goal is to translate a client brief into executable image generation prompts.
 
         CRITICAL INSTRUCTION:
-        You MUST strictly adhere to the provided BRAND GUIDELINES.
-        - If the guidelines say "minimalist", the prompt must include "minimalist".
-        - If the guidelines specify colors (e.g., "pastel blue"), the prompt MUST include them.
-        - Ignore any contradictory style in the brief if it violates the brand guidelines.
+        1. **Strictly adhere to BRAND GUIDELINES**:
+           - Use the specified color palette, tone, and forbidden elements.
+           - If the guidelines say "minimalist", usage of clutter is forbidden.
         
-        Input:
-        1. Client Brief: Description of needs/ideas.
-        2. Brand Guidelines: Aesthetics, tone, and visual identity.
+        2. **Interpret the Client Brief**:
+           - Extract every distinct post request.
+           - For EACH post request, generate 3 COMPLETY DIFFERENT visual approaches (options).
         
+        3. **Distinct Options**:
+           - Option 1: **Literal/Direct Representation**. (Shows exactly what is described).
+           - Option 2: **Metaphorical/Creative**. (Uses symbols or abstract composition to convey the idea).
+           - Option 3: **Lifestyle/Contextual**. (Shows the concept in a real-world or applied context, if applicable).
+           - ALL options must still look like they belong to the same Brand (same colors/fonts/vibe).
+
         Output:
         A JSON object containing a list of 'posts'.
         Each 'post' must have:

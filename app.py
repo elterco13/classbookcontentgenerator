@@ -101,6 +101,17 @@ if generate_btn and generator and brief:
                     
                     if success:
                         st.image(img_path, caption=f"Opción {i+1}", use_container_width=True)
+                        
+                        # Individual Download Button
+                        with open(img_path, "rb") as file:
+                            st.download_button(
+                                label="⬇️ Descargar Imagen",
+                                data=file,
+                                file_name=img_filename,
+                                mime="image/png",
+                                key=f"dl_{post['id']}_{i+1}"
+                            )
+
                         st.success("Generado")
                         
                         # Regeneration UI
@@ -174,14 +185,17 @@ if generate_btn and generator and brief:
             import shutil
             shutil.make_archive("output_files", 'zip', output_dir)
             
+            st.divider()
             with open("output_files.zip", "rb") as fp:
                 btn = st.download_button(
-                    label="📥 Descargar Todo (Imágenes + CSV)",
+                    label="📦 DESCARGAR TODO (ZIP)",
                     data=fp,
                     file_name="nano_banana_output.zip",
                     mime="application/zip",
-                    type="primary"
+                    type="primary",
+                    help="Descarga todas las imágenes y el registro en un solo archivo."
                 )
+            st.success("✅ Archivo ZIP listo para descarga.")
     else:
         st.warning("No se encontraron ideas de posts en la respuesta del modelo.")
 

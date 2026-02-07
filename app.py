@@ -168,7 +168,20 @@ if generate_btn and generator and brief:
             df_final.to_csv(log_file, index=False)
             st.toast("✅ Registro y archivos guardados correctamente.")
             st.balloons()
-            st.success(f"¡Proceso completado! Se han generado {total_images} imágenes en la carpeta '{output_dir}'.")
+            st.success(f"¡Proceso completado! Se han generado {total_images} imágenes.")
+
+            # Create ZIP for download (Critical for Cloud Deployment)
+            import shutil
+            shutil.make_archive("output_files", 'zip', output_dir)
+            
+            with open("output_files.zip", "rb") as fp:
+                btn = st.download_button(
+                    label="📥 Descargar Todo (Imágenes + CSV)",
+                    data=fp,
+                    file_name="nano_banana_output.zip",
+                    mime="application/zip",
+                    type="primary"
+                )
     else:
         st.warning("No se encontraron ideas de posts en la respuesta del modelo.")
 

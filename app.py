@@ -24,9 +24,10 @@ with st.sidebar:
     
     # Model Configuration
     st.markdown("### Modelos")
-    model_options = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-    text_model_id = st.selectbox("Modelo de Texto", options=model_options, index=0)
-    image_model_id = st.selectbox("Modelo de Imagen", options=model_options, index=0)
+    text_model_options = ["gemini-2.5-flash", "gemini-3.0-flash", "gemini-2.5-flash-lite"]
+    image_model_options = ["gemini-2.5-flash-image", "gemini-3.0-pro-image"]
+    text_model_id = st.selectbox("Modelo de Texto", options=text_model_options, index=0)
+    image_model_id = st.selectbox("Modelo de Imagen", options=image_model_options, index=0)
     
     output_dir = st.text_input("Carpeta de Salida", value="output")
     

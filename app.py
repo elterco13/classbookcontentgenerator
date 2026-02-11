@@ -25,7 +25,7 @@ with st.sidebar:
     # Model Configuration
     st.markdown("### Modelos")
     text_model_options = ["gemini-2.5-flash", "gemini-3.0-flash", "gemini-2.5-flash-lite"]
-    image_model_options = ["gemini-2.5-flash-image", "gemini-3.0-pro-image"]
+    image_model_options = ["gemini-2.5-flash-image", "gemini-3-pro-image-preview"]
     text_model_id = st.selectbox("Modelo de Texto", options=text_model_options, index=0)
     image_model_id = st.selectbox("Modelo de Imagen", options=image_model_options, index=0)
     

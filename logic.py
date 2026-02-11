@@ -141,9 +141,9 @@ class ContentGenerator:
             error_msg = f"Error calling Gemini API (Text): {e}\n\nAVAILABLE MODELS:\n" + "\n".join(available)
             raise Exception(error_msg)
 
-    def generate_image(self, prompt: str, output_path: str, aspect_ratio: str = "1:1", image_size: str = "1K"):
-        # Generates an image using gemini-3-pro-image-preview.
-        # Supports custom aspect ratios and resolution.
+    def generate_image(self, prompt: str, output_path: str, aspect_ratio: str = "1:1"):
+        # Generates an image using Gemini image generation models.
+        # Supports custom aspect ratios (1:1, 16:9, 9:16, 3:2, 2:3, etc.)
         # Ensure prompt is a string, handling dictionary inputs gracefully
         if isinstance(prompt, dict):
             prompt = prompt.get('prompt', prompt.get('text', str(prompt)))
@@ -157,8 +157,7 @@ class ContentGenerator:
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
                     image_config=types.ImageConfig(
-                        aspect_ratio=aspect_ratio,
-                        image_size=image_size
+                        aspect_ratio=aspect_ratio
                     )
                 )
             )

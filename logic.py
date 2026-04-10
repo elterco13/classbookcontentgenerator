@@ -157,7 +157,8 @@ class ContentGenerator:
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
                     image_config=types.ImageConfig(
-                        aspect_ratio=aspect_ratio
+                        aspect_ratio=aspect_ratio,
+                        image_size="1K"
                     )
                 )
             )

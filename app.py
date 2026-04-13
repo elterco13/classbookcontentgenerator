@@ -73,11 +73,35 @@ if generate_btn and generator and brief:
         try:
             # We use the provided 'guidelines' from the main UI
             result_json = generator.generate_prompts(brief, guidelines)
-            
+
             st.session_state.generated_content = result_json
             st.session_state.results_cache = [] # reset image cache
-            st.session_state.should_generate = True
             st.session_state.images_generated = False
+            st.session_state.brief_used = brief
+            
+            # Initialize generated_images_data structure
+            st.session_state.generated_images_data = {}
+            posts = result_json.get('posts', [])
+            for post_idx, post in enumerate(posts):
+                st.session_state.generated_images_data[post_idx] = {
+                    'id': post['id'],
+                    'concept': post['concept'],
+                    'description': post['description'],
+                    'options': []
+                }
+                for i, prompt_data in enumerate(post['options']):
+                    prompt = prompt_data.get('prompt', str(prompt_data)) if isinstance(prompt_data, dict) else str(prompt_data)
+                    st.session_state.generated_images_data[post_idx]['options'].append({
+                        'original_prompt': prompt,
+                        'current_prompt': prompt,
+                        'path': None,
+                        'filename': None,
+                        'status': 'pending',
+                        'message': 'Pendiente - Presiona "Generar Imagen"'
+                    })
+            
+            st.success("✅ Prompts generados exitosamente. Ahora puedes generar las imágenes individualmente.")
+            st.rerun()
         except Exception as e:
             st.error(f"Error generando prompts: {e}")
             st.stop()
@@ -85,158 +109,78 @@ if generate_btn and generator and brief:
 # Main Processor
 if st.session_state.generated_content and generator:
     posts = st.session_state.generated_content.get('posts', [])
-    
-    # GENERATION PHASE
-    if st.session_state.get('should_generate', False) and not st.session_state.get('images_generated', False):
-         total_images = sum(len(p['options']) for p in posts)
-         
-         if total_images > 0:
-             progress_bar = st.progress(0, text="2/2: Generando imágenes...")
-             
-             # Ensure output directory exists
-             os.makedirs(output_dir, exist_ok=True)
-             
-             # Initialize session state for progressive updates
-             if 'generated_images_data' not in st.session_state:
-                 st.session_state.generated_images_data = {}
-
-             log_data = []
-             images_generated_count = 0
-             
-             stop_btn = st.button("⛔ DETENER PROCESO", type="primary")
-
-             # PRE-RENDER PLACEHOLDERS
-             # We create a dictionary of empty slots to fill later
-             placeholders = {}
-             
-             st.subheader("Generando en tiempo real...")
-             
-             for post_idx, post in enumerate(posts):
-                 st.markdown(f"### Post {post['id']}: {post['concept']}")
-                 st.write(post['description'])
-                 
-                 # Initialize data structure for this post
-                 if post_idx not in st.session_state.generated_images_data:
-                     st.session_state.generated_images_data[post_idx] = {
-                        'id': post['id'],
-                        'concept': post['concept'],
-                        'description': post['description'],
-                        'options': []
-                     }
-
-                 cols = st.columns(3)
-                 for i, prompt_data in enumerate(post['options']):
-                     with cols[i]:
-                         st.caption(f"Opción {i+1}")
-                         # Create an empty container for the image/status
-                         placeholders[f"{post_idx}_{i}"] = st.empty()
-                         placeholders[f"{post_idx}_{i}"].info("⏳ Pendiente...")
-                         
-                         # Parse prompt
-                         if isinstance(prompt_data, dict):
-                              prompt = prompt_data.get('prompt', str(prompt_data))
-                         else:
-                              prompt = str(prompt_data)
-                              
-                         # Pre-fill structure with pending state
-                         if len(st.session_state.generated_images_data[post_idx]['options']) <= i:
-                             st.session_state.generated_images_data[post_idx]['options'].append({
-                                'original_prompt': prompt,
-                                'current_prompt': prompt,
-                                'path': None,
-                                'filename': None,
-                                'status': 'pending',
-                                'message': 'Pendiente'
-                             })
-
-             # GENERATION LOOP
-             for post_idx, post in enumerate(posts):
-                 if stop_btn: break
-                 
-                 for i, prompt_data in enumerate(post['options']):
-                     if stop_btn: break
-                     
-                     # Get prompt string again
-                     if isinstance(prompt_data, dict):
-                          prompt = prompt_data.get('prompt', str(prompt_data))
-                     else:
-                          prompt = str(prompt_data)
-
-                     # Update placeholder to "Generating..."
-                     placeholders[f"{post_idx}_{i}"].info("🎨 Generando...")
-                     
-                     img_filename = f"post_{post['id']}_opt_{i+1}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-                     img_path = os.path.join(output_dir, img_filename)
-                     
-                     success, msg = generator.generate_image(prompt, img_path)
-                     
-                     # Update Session State & UI Immediately
-                     if success:
-                         st.session_state.generated_images_data[post_idx]['options'][i].update({
-                            'path': img_path,
-                            'filename': img_filename,
-                            'status': 'generated',
-                            'message': 'Generado'
-                         })
-                         # Show image immediately in the placeholder
-                         placeholders[f"{post_idx}_{i}"].image(img_path, caption=f"Opción {i+1}", use_container_width=True)
-                         
-                         log_data.append({"date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "brief_snippet": brief[:30], "post_id": post['id'], "concept": post['concept'], "option_num": i+1, "prompt": prompt, "file_path": img_path})
-                     else:
-                         st.session_state.generated_images_data[post_idx]['options'][i].update({
-                            'status': 'error',
-                            'message': msg
-                         })
-                         placeholders[f"{post_idx}_{i}"].error(f"Error: {msg}")
-                     
-                     images_generated_count += 1
-                     progress_bar.progress(images_generated_count / total_images)
-             
-             st.session_state.images_generated = True
-             st.session_state.should_generate = False # Done
-             
-             # Save Log
-             if log_data:
-                log_file = os.path.join(output_dir, "generation_log.csv")
-                df_new = pd.DataFrame(log_data)
-                if os.path.exists(log_file):
-                    df_old = pd.read_csv(log_file)
-                    df_final = pd.concat([df_old, df_new], ignore_index=True)
-                else:
-                    df_final = df_new
-                
-                df_final.to_csv(log_file, index=False)
-                st.toast("✅ Registro y archivos guardados correctamente.")
-                st.balloons()
-                st.success(f"¡Proceso completado! Se han generado {total_images} imágenes.")
-
-                # Create ZIP for download (Critical for Cloud Deployment)
-                import shutil
-                shutil.make_archive("output_files", 'zip', output_dir)
-             
-             st.rerun()
 
     # DISPLAY PHASE (Persistent)
     st.divider()
-    st.subheader("Resultados de la Generación")
-    
+    st.subheader("Resultados - Generación Manual de Imágenes")
+    st.info("💡 Haz clic en '🎨 Generar Imagen' para crear solo las imágenes que necesites, ahorrando tokens.")
+
     # Use the data stored in session_state for display
     if 'generated_images_data' in st.session_state:
         for post_idx, post_data in st.session_state.generated_images_data.items():
             st.markdown(f"### Post {post_data['id']}: {post_data['concept']}")
             st.write(post_data['description'])
-            
+
             cols = st.columns(3) # Display 3 options side by side
-            
+
             for i, option_data in enumerate(post_data['options']):
                 with cols[i]:
                     st.caption(f"Opción {i+1}")
                     st.code(option_data['current_prompt'], language="text")
+
+                    # Button to generate image on-demand
+                    if option_data['status'] == 'pending' or option_data['status'] == 'error':
+                        if st.button("🎨 Generar Imagen", key=f"gen_{post_data['id']}_{i+1}", type="primary"):
+                            with st.spinner("Generando imagen..."):
+                                img_filename = f"post_{post_data['id']}_opt_{i+1}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+                                img_path = os.path.join(output_dir, img_filename)
+                                
+                                # Ensure output directory exists
+                                os.makedirs(output_dir, exist_ok=True)
+                                
+                                success, msg = generator.generate_image(option_data['current_prompt'], img_path)
+                                
+                                if success:
+                                    st.session_state.generated_images_data[post_idx]['options'][i].update({
+                                        'path': img_path,
+                                        'filename': img_filename,
+                                        'status': 'generated',
+                                        'message': 'Generado'
+                                    })
+                                    
+                                    # Log generation
+                                    log_data = [{
+                                        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                        "brief_snippet": st.session_state.get('brief_used', '')[:30],
+                                        "post_id": post_data['id'],
+                                        "concept": post_data['concept'],
+                                        "option_num": i+1,
+                                        "prompt": option_data['current_prompt'],
+                                        "file_path": img_path
+                                    }]
+                                    log_file = os.path.join(output_dir, "generation_log.csv")
+                                    df_new = pd.DataFrame(log_data)
+                                    if os.path.exists(log_file):
+                                        df_old = pd.read_csv(log_file)
+                                        df_final = pd.concat([df_old, df_new], ignore_index=True)
+                                    else:
+                                        df_final = df_new
+                                    df_final.to_csv(log_file, index=False)
+                                    
+                                    st.toast(f"✅ Imagen generada para Post {post_data['id']}, Opción {i+1}")
+                                    st.rerun()
+                                else:
+                                    st.session_state.generated_images_data[post_idx]['options'][i].update({
+                                        'status': 'error',
+                                        'message': msg
+                                    })
+                                    st.error(f"Error al generar: {msg}")
+                                    st.rerun()
                     
                     if option_data['status'] == 'generated' and option_data['path'] and os.path.exists(option_data['path']):
                         st.image(option_data['path'], caption=f"Opción {i+1}", use_container_width=True)
                         st.success(option_data['message'])
-                        
+
                         # Individual Download Button
                         with open(option_data['path'], "rb") as file:
                             st.download_button(
@@ -246,25 +190,25 @@ if st.session_state.generated_content and generator:
                                 mime="image/png",
                                 key=f"dl_{post_data['id']}_{i+1}"
                             )
-                        
+
                         # Regeneration UI
                         regen_key = f"regen_{post_data['id']}_{i+1}"
                         correction_prompt = st.text_input(
-                            "Corrección (opcional)", 
+                            "Corrección (opcional)",
                             key=f"input_{regen_key}",
                             placeholder="Ej: Cambia el fondo a azul, agrega más texto..."
                         )
-                        
+
                         if st.button("🔄 Regenerar", key=f"btn_{regen_key}"):
                             if correction_prompt:
                                 full_correction = f"{option_data['original_prompt']}\n\nCORRECTIONS: {correction_prompt}"
-                                
+
                                 with st.spinner("Regenerando imagen..."):
                                     new_filename = f"post_{post_data['id']}_opt_{i+1}_v2_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
                                     new_path = os.path.join(output_dir, new_filename)
-                                    
+
                                     regen_success, regen_msg = generator.generate_image(full_correction, new_path)
-                                    
+
                                     if regen_success:
                                         # Update session state for the regenerated image
                                         st.session_state.generated_images_data[post_idx]['options'][i].update({
@@ -274,12 +218,12 @@ if st.session_state.generated_content and generator:
                                             'status': 'generated', # Reset status to generated so it shows up
                                             'message': 'Imagen regenerada'
                                         })
-                                        
+
                                         # Log regeneration
                                         log_file = os.path.join(output_dir, "generation_log.csv")
                                         log_entry = {
                                             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                            "brief_snippet": brief[:30],
+                                            "brief_snippet": st.session_state.get('brief_used', '')[:30],
                                             "post_id": post_data['id'],
                                             "concept": post_data['concept'],
                                             "option_num": f"{i+1}_v2",
@@ -293,7 +237,7 @@ if st.session_state.generated_content and generator:
                                         else:
                                             df_final = df_new
                                         df_final.to_csv(log_file, index=False)
-                                        
+
                                         st.toast("✅ Imagen regenerada y registrada.")
                                         st.rerun() # Rerun to display the new image
                                     else:
@@ -302,33 +246,37 @@ if st.session_state.generated_content and generator:
                                 st.warning("Ingresa instrucciones de corrección para regenerar.")
                     elif option_data['status'] == 'error':
                         st.error(option_data['message'])
-                    else:
-                        st.warning("Imagen no encontrada o no generada.")
+                    elif option_data['status'] == 'pending':
+                        st.info("⏳ Presiona '🎨 Generar Imagen'")
 
     st.divider()
+
+    # Download ZIP button (visible when images have been generated)
+    generated_count = sum(
+        1 for post_data in st.session_state.generated_images_data.values() 
+        for opt in post_data['options'] 
+        if opt['status'] == 'generated'
+    )
     
-    # Download ZIP button (always visible after initial generation)
-    if os.path.exists(os.path.join(output_dir, "..", "output_files.zip")): # Check roughly
-         # Actually just verify if generated_images_data exists, implying zip likely exists or can be made
-         pass
-    
-    # Re-create ZIP just in case (fast enough) or check file
-    zip_path = "output_files.zip"
-    if os.path.exists(zip_path): 
-        with open(zip_path, "rb") as fp:
-            st.download_button(
-                label="📦 DESCARGAR TODO (ZIP)",
-                data=fp,
-                file_name="nano_banana_output.zip",
-                mime="application/zip",
-                type="primary",
-                help="Descarga todas las imágenes y el registro en un solo archivo."
-            )
-    elif 'generated_images_data' in st.session_state:
-         st.info("Generando archivo ZIP...")
-         import shutil
-         shutil.make_archive("output_files", 'zip', output_dir)
-         st.rerun()
+    if generated_count > 0:
+        st.info(f"📊 {generated_count} imagen(es) generada(s)")
+        
+        # Create ZIP file
+        zip_path = "output_files.zip"
+        if os.path.exists(output_dir):
+            import shutil
+            shutil.make_archive("output_files", 'zip', output_dir)
+        
+        if os.path.exists(zip_path):
+            with open(zip_path, "rb") as fp:
+                st.download_button(
+                    label="📦 DESCARGAR TODO (ZIP)",
+                    data=fp,
+                    file_name="nano_banana_output.zip",
+                    mime="application/zip",
+                    type="primary",
+                    help="Descarga todas las imágenes generadas y el registro en un solo archivo."
+                )
 
 else:
     # Initial State or no content

@@ -11,7 +11,7 @@ class PostConcept(BaseModel):
     concept: str = Field(description="Title or theme of post")
     description: str = Field(description="Brief explanation of the visual direction")
     options: List[str] = Field(
-        description="A list of exactly 3 distinct image prompt strings corresponding to Option 1 (Pop Educational), Option 2 (Storybook), Option 3 (Creative Fusion / Modern Editorial). Each prompt must strictly adhere to the brief and never invent text."
+        description="A list of exactly 3 distinct image prompt strings corresponding to Option 1 (Pop Educational), Option 2 (Storybook), Option 3 (Creative Fusion / Modern Editorial). Each prompt must strictly adhere to the brief and brand guidelines without inventing text."
     )
 
 class PromptResponseSchema(BaseModel):
@@ -37,43 +37,43 @@ class ContentGenerator:
     def generate_prompts(self, brief: str, guidelines: str) -> Dict[str, Any]:
         """
         Generates structured image prompts based on the brief and brand guidelines.
-        Enforces strict brief adherence and eliminates text hallucination.
+        Enforces strict brief adherence, brand title inclusion, and eliminates text hallucination.
         """
         system_instruction = """
 You are an expert Creative Director and Visual Prompt Engineer for 'My Kiwi Languages'.
-Your mission is to transform client briefs into precision image generation prompts for social media posts.
+Your mission is to transform client briefs and brand guidelines into precision image generation prompts for social media posts.
 
 *** CORE FIDELITY DIRECTIVES (STRICT COMPLIANCE REQUIRED) ***
-1. ZERO TEXT HALLUCINATION / INVENTED TEXT:
-   - You MUST NOT invent, assume, translate, or fabricate any text that is not explicitly requested in the brief.
-   - If the brief specifies a title (e.g., "Include My Kiwi Languages as the title"), render ONLY that exact title text in the prompt.
-   - If the brief specifies a headline or phrase (e.g., "¿Hasta dónde puedes llegar?"), render ONLY that exact phrase verbatim, preserving original language, accents, and punctuation.
-   - DO NOT prepend country names or labels to the headline (e.g., NEVER write "Colombia: ¿Hasta dónde puedes llegar?" unless the brief explicitly quotes "Colombia: ¿Hasta dónde puedes llegar?").
-   - NEVER add English translations, Spanish subtitles, or generic CTAs (like "Start speaking Spanish today!" or "Follow us") unless explicitly written in the brief.
-   - If the brief does not ask for text, DO NOT include any text overlays in the prompt.
+1. ZERO TEXT HALLUCINATION / RESPECT BRAND GUIDELINES & BRIEF:
+   - You MUST NOT invent, assume, translate, or fabricate any text not requested in the brief or brand guidelines.
+   - If the Brand Guidelines or brief specify a brand title (e.g., 'My Kiwi Languages'), always render that exact title clearly in the composition (e.g. at the top margin in clean, high-legibility typography).
+   - If the brief specifies a headline or phrase, render ONLY that exact phrase verbatim, preserving original language, accents, and punctuation.
+   - DO NOT prepend country names or labels to headlines unless explicitly quoted in the brief.
+   - NEVER add English translations, Spanish subtitles, or generic CTAs (like 'Start speaking Spanish today!' or 'Follow us') unless explicitly written in the brief.
+   - If no specific headline text is given in the brief, render ONLY the brand title ('My Kiwi Languages') without inventing additional slogans or body text.
 
 2. STRICT ORDER & POST CORRESPONDENCE:
    - Map each post in the brief 1-to-1 in the EXACT requested order. Never reorder, omit, or add posts.
 
 3. ACCURATE VISUAL TRANSLATION:
-   - Faithfully translate every requested element into the image prompts (colors, characters, cultural elements, props, backgrounds, thought bubbles).
-   - The protagonist is "Kiwi": a stylized, chubby ovoid brown kiwi bird with large expressive glossy black eyes and a slender orange beak. Adapt its attire, accessories, or styling exactly as requested in the brief (e.g., cultural fusion between Latin America/target country and New Zealand).
+   - Faithfully translate every requested element from the brief and guidelines (colors, characters, cultural elements, workplace settings, props, backgrounds).
+   - The protagonist is 'Kiwi': a stylized, chubby ovoid brown kiwi bird with large expressive glossy black eyes and a slender orange beak. Adapt its attire, accessories, or colleagues exactly as requested in the brief (e.g. cultural fusion between New Zealand and the post's culture).
 
 *** THE THREE MASTER ARTISTIC STYLES ***
-- OPTION 1: "Pop Educational Infographic Card"
-  * Visual Style: High-quality 1:1 educational infographic card in a modern 2D digital illustration style with soft watercolor paper texture and clean, friendly line-art outlines. Flat vector shapes with organic shading.
-  * Palette: Deep navy blue (#1A2B4C) outlines and text, warm pastel blues and creams, vibrant orange (#FF5722) accents, combined seamlessly with any specific flag or cultural colors requested in the brief.
-  * Composition: Educational card layout with clean negative space and high mobile legibility. Renders ONLY the exact text requested in the brief.
+- OPTION 1: 'Pop Educational Infographic Card'
+  * Visual Style: High-quality 1:1 educational card in a modern 2D digital illustration style with soft watercolor paper texture and clean, friendly line-art outlines. Flat vector shapes with organic shading.
+  * Palette: Deep navy blue (#1A2B4C) outlines and text, warm pastel blues and creams, vibrant orange (#FF5722) accents, combined with cultural accents.
+  * Composition: Educational layout with clean negative space. Renders the brand title 'My Kiwi Languages' and any exact text from the brief.
 
-- OPTION 2: "Hand-drawn / Storybook Illustration"
-  * Visual Style: Whimsical children's book illustration style. Rough textures, soft brush shading, and organic ink outlines. Cozy, warm watercolor palette with defined borders.
-  * Composition: Narrative, heartfelt storybook scene placing the Kiwi in the requested setting with requested props. Renders ONLY the exact text requested in the brief in a friendly hand-lettered or storybook font.
+- OPTION 2: 'Hand-drawn / Storybook Illustration'
+  * Visual Style: Whimsical children's book illustration style. Rough textures, soft brush shading, organic ink outlines. Cozy warm watercolor palette with defined borders.
+  * Composition: Heartfelt storybook narrative scene placing the Kiwi and colleagues in the requested setting. Renders 'My Kiwi Languages' and requested text in friendly storybook lettering.
 
-- OPTION 3: "Creative Fusion / Modern Editorial"
+- OPTION 3: 'Creative Fusion / Modern Editorial'
   * Visual Style: Polished modern editorial digital illustration. Clean geometric compositions, sophisticated vector color blocking, dynamic aspirational layout, sleek vector lines with premium depth and subtle lighting.
-  * Cultural Fusion: Elegantly blends modern aspirational motifs (international travel, study abroad, career growth) with the cultural touches requested in the brief (e.g. Colombian flag colors, indigenous patterns, paired with subtle NZ icons like the silver fern and Auckland skyline).
-  * Graphic Elements: Sophisticated, clean geometric or rounded vector thought bubble / graphic containers displaying the requested icons (e.g. passport, airplane, study diploma, growth icons).
-  * Typography & Text: High-end editorial poster typography. Renders the exact title and headline requested in the brief with pristine legibility and clean negative space. No unrequested text.
+  * Cultural Fusion: Elegantly blends modern workplace/aspirational motifs with cultural touches requested in the brief (e.g. cultural accents paired with NZ workplace colleagues, silver fern motifs, or clean architectural lines).
+  * Graphic Elements: Sophisticated, clean geometric or rounded vector thought bubble / graphic containers displaying the requested icons.
+  * Typography & Text: High-end editorial typography. Renders the brand title 'My Kiwi Languages' prominently at the top with pristine legibility. No unrequested text.
 
 *** MANDATORY OUTPUT ***
 Return a JSON object conforming to PromptResponseSchema with 'posts', each containing 'id', 'concept', 'description', and 'options' [Option 1, Option 2, Option 3].

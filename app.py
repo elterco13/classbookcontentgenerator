@@ -66,13 +66,21 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("1. Entrada Brief & Marca")
     
-    # Load default guidelines
-    default_guidelines = ""
-    if os.path.exists("brand_guidelines.txt"):
-        with open("brand_guidelines.txt", "r", encoding="utf-8") as f:
-            default_guidelines = f.read()
+    # Load default guidelines from file or session state
+    if 'guidelines_text' not in st.session_state:
+        default_guidelines = ""
+        if os.path.exists("brand_guidelines.txt"):
+            with open("brand_guidelines.txt", "r", encoding="utf-8") as f:
+                default_guidelines = f.read()
+        st.session_state.guidelines_text = default_guidelines
 
-    guidelines = st.text_area("Guía de Marca / Estética", value=default_guidelines, height=200)
+    guidelines = st.text_area("Guía de Marca / Estética", value=st.session_state.guidelines_text, height=200)
+
+    if st.button("💾 Guardar Guía de Marca", help="Guarda este texto en el archivo para que se cargue automáticamente siempre."):
+        with open("brand_guidelines.txt", "w", encoding="utf-8") as f:
+            f.write(guidelines)
+        st.session_state.guidelines_text = guidelines
+        st.success("✅ Guía de marca guardada en el archivo. Se cargará automáticamente cada vez que inicies la app.")
     
     brief = st.text_area(
         "Brief del Cliente (Email/Mensaje)",

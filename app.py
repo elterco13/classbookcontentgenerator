@@ -1,364 +1,513 @@
-import streamlit as st
+"""My Kiwi Studio: pega el brief y obtén las imágenes con el estilo de la marca."""
+
 import os
-import pandas as pd
-from logic import ContentGenerator
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Page Config
-st.set_page_config(
-    page_title="Nano Banana Automator",
-    page_icon="🍌",
-    layout="wide"
-)
+import streamlit as st
 
-# Application Title
-st.title("🍌 Nano Banana Content Automator")
-st.markdown("Genera prompts e imágenes consistentes para **My Kiwi Languages** a partir de un brief.")
+from kiwi import config
+from kiwi.gemini import GeminiClient, GenerationError, closest_aspect_ratio, prepare_reference
+from kiwi.jobs import ImageVersion, Job, PostState, list_jobs, new_job_folder
+from kiwi.prompt_builder import build_edit_prompt, build_post_prompt
+from kiwi.schemas import Phrase, VocabItem
+from kiwi.styles import DEFAULT_STYLE, STYLES
 
-# Sidebar - Settings
-with st.sidebar:
-    st.header("Configuración")
-    
-    # API Key Input
-    api_key = st.text_input("Gemini API Key", type="password", value=os.environ.get("GOOGLE_API_KEY", ""))
-    
-    # Model Configuration
-    st.markdown("### Modelos")
-    text_model_options = [
-        "gemini-2.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.0-flash",
-        "gemini-2.5-pro"
-    ]
-    image_model_options = [
-        "gemini-3.1-flash-image-preview",
-        "gemini-3-pro-image-preview",
-        "imagen-3.0-generate-002",
-        "gemini-2.5-flash-image"
-    ]
-    
-    text_model_id = st.selectbox(
-        "Modelo de Texto",
-        options=text_model_options,
-        index=0,
-        help="Recomendado: gemini-2.5-flash para rapidez o gemini-3.5-flash-lite"
+st.set_page_config(page_title="My Kiwi Studio", page_icon="🥝", layout="wide")
+
+MODEL_NAMES = {v: k for k, v in config.IMAGE_MODELS.items()}
+STYLE_KEYS = list(STYLES)
+
+
+# ---------------------------------------------------------------- utilidades
+@st.cache_resource(show_spinner=False)
+def get_client(api_key: str) -> GeminiClient:
+    return GeminiClient(api_key)
+
+
+def secret_api_key() -> str:
+    """API key desde .env / variables de entorno o, en Streamlit Cloud, desde st.secrets."""
+    key = config.get_api_key()
+    if key:
+        return key
+    try:
+        return st.secrets.get("GOOGLE_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:  # no hay secrets.toml
+        return ""
+
+
+def flash(msg: str) -> None:
+    st.session_state.setdefault("flash", []).append(msg)
+
+
+def phrases_to_text(phrases: list[Phrase]) -> str:
+    return "\n".join(f"{p.text} | {p.translation}" if p.translation else p.text for p in phrases)
+
+
+def text_to_phrases(text: str) -> list[Phrase]:
+    out = []
+    for line in text.splitlines():
+        if line.strip():
+            original, _, translation = line.partition("|")
+            out.append(Phrase(text=original.strip(), translation=translation.strip()))
+    return out
+
+
+def vocab_to_text(items: list[VocabItem]) -> str:
+    return "\n".join(f"{v.term} = {v.translation}" if v.translation else v.term for v in items)
+
+
+def text_to_vocab(text: str) -> list[VocabItem]:
+    out = []
+    for line in text.splitlines():
+        if line.strip():
+            term, _, translation = line.partition("=")
+            out.append(VocabItem(term=term.strip(), translation=translation.strip()))
+    return out
+
+
+def lines(text: str) -> list[str]:
+    return [x.strip() for x in text.splitlines() if x.strip()]
+
+
+def prompt_for(post: PostState) -> str:
+    return post.prompt_override.strip() or build_post_prompt(post.spec, post.style, post.is_reference)
+
+
+def make_version(kind: str, prompt: str, instruction: str = "") -> ImageVersion:
+    model_id = config.IMAGE_MODELS[st.session_state.model_name]
+    size = st.session_state.size
+    return ImageVersion(
+        file="",
+        kind=kind,
+        model=model_id,
+        size=size,
+        prompt=prompt,
+        instruction=instruction,
+        cost=config.estimate_cost(model_id, size),
     )
-    image_model_id = st.selectbox(
-        "Modelo de Imagen",
-        options=image_model_options,
-        index=0,
-        help="Recomendado: gemini-3.1-flash-image-preview o gemini-3-pro-image-preview (Nano Banana Pro)"
-    )
-    
-    output_dir = st.text_input("Carpeta de Salida", value="output")
-    
-    if st.button("🗑️ Limpiar Galería"):
-        if 'generated_content' in st.session_state:
-            del st.session_state['generated_content']
-        if 'generated_images_data' in st.session_state:
-            del st.session_state['generated_images_data']
-        st.success("Galería limpiada.")
+
+
+def generate_many(job: Job, client: GeminiClient, indices: list[int]) -> None:
+    """Genera varias imágenes en paralelo y las guarda como nuevas versiones."""
+    model_id = config.IMAGE_MODELS[st.session_state.model_name]
+    size = st.session_state.size
+    progress = st.progress(0.0, text=f"Generando {len(indices)} imagen(es)...")
+    errors_found = []
+    with ThreadPoolExecutor(max_workers=config.MAX_PARALLEL_IMAGES) as pool:
+        futures = {}
+        for i in indices:
+            post = job.posts[i]
+            prompt = prompt_for(post)
+            fut = pool.submit(
+                client.generate_image, prompt, model_id, post.spec.aspect_ratio, size, job.read_reference(i)
+            )
+            futures[fut] = (i, prompt)
+        for done, fut in enumerate(as_completed(futures), 1):
+            i, prompt = futures[fut]
+            try:
+                job.add_version(i, fut.result(), make_version("generate", prompt))
+            except GenerationError as e:
+                errors_found.append(f"Post {job.posts[i].spec.number}: {e}")
+            progress.progress(done / len(indices), text=f"{done}/{len(indices)} listas")
+    progress.empty()
+    for err in errors_found:
+        st.error(err)
+    if not errors_found:
+        flash(f"✅ {len(indices)} imagen(es) generada(s).")
         st.rerun()
 
-# Main Interface: Input Section
-col1, col2 = st.columns([1, 1])
 
-with col1:
-    st.subheader("1. Entrada Brief & Marca")
-    
-    # Load default guidelines from file or session state
-    if 'guidelines_text' not in st.session_state:
-        default_guidelines = ""
-        if os.path.exists("brand_guidelines.txt"):
-            with open("brand_guidelines.txt", "r", encoding="utf-8") as f:
-                default_guidelines = f.read()
-        st.session_state.guidelines_text = default_guidelines
+def reference_form(form_key: str, output_dir: str) -> None:
+    """Formulario para crear un post a partir de una imagen de referencia.
 
-    guidelines = st.text_area("Guía de Marca / Estética", value=st.session_state.guidelines_text, height=200)
+    Si no hay trabajo abierto, crea uno nuevo con ese post.
+    """
+    with st.form(form_key, clear_on_submit=True):
+        uploaded = st.file_uploader("Imagen de referencia", type=["png", "jpg", "jpeg", "webp"])
+        instructions = st.text_area(
+            "Qué cambiar respecto a la referencia",
+            height=120,
+            placeholder="Mismo estilo que la referencia, pero para Canadá: sustituye los símbolos de "
+            "EE. UU. y Australia del cuerpo del Kiwi y del globo por símbolos de Canadá (hoja de arce, "
+            "bandera, alce, Rocosas) y de Nueva Zelanda.",
+        )
+        texts = st.text_area(
+            "Texto exacto de la imagen (opcional, una línea por elemento, en orden de importancia)",
+            height=80,
+            placeholder="MY KIWI ENGLISH\nLearn Canadian English",
+        )
+        st.caption("Si dejas el texto vacío, se conserva el de la referencia salvo lo que pidas cambiar.")
+        submitted = st.form_submit_button("Añadir post", icon=":material/add_photo_alternate:")
+    if not submitted:
+        return
+    if not uploaded or not instructions.strip():
+        st.warning("Sube una imagen y escribe qué cambiar.")
+        return
+    reference = prepare_reference(uploaded.getvalue())
+    aspect = closest_aspect_ratio(reference, config.ASPECT_RATIOS)
+    job = st.session_state.get("job")
+    if job is None:
+        job_id, folder = new_job_folder(output_dir)
+        job = Job(id=job_id, folder=folder, brief=instructions, style=DEFAULT_STYLE, posts=[])
+        st.session_state.job = job
+    idx = job.add_reference_post(reference, instructions, lines(texts), aspect)
+    flash(f"Post {job.posts[idx].spec.number} añadido desde la referencia ({aspect}).")
+    st.rerun()
 
-    if st.button("💾 Guardar Guía de Marca", help="Guarda este texto en el archivo para que se cargue automáticamente siempre."):
-        with open("brand_guidelines.txt", "w", encoding="utf-8") as f:
-            f.write(guidelines)
-        st.session_state.guidelines_text = guidelines
-        st.success("✅ Guía de marca guardada en el archivo. Se cargará automáticamente cada vez que inicies la app.")
-    
-    brief = st.text_area(
-        "Brief del Cliente (Email/Mensaje)",
-        height=150,
-        placeholder="Ej: Necesitamos 3 posts para la semana que viene. Uno sobre phrasal verbs, otro un meme de viernes, y otro frase inspiradora."
+
+# ---------------------------------------------------------------- barra lateral
+with st.sidebar:
+    st.title("🥝 My Kiwi Studio")
+
+    api_key = secret_api_key()
+    if not api_key:
+        api_key = st.text_input("API key de Gemini", type="password", help="Mejor guárdala en el archivo .env")
+    else:
+        st.caption("🔑 API key configurada")
+
+    st.segmented_control(
+        "Modelo de imagen",
+        list(config.IMAGE_MODELS),
+        default=config.DEFAULT_IMAGE_MODEL,
+        required=True,
+        key="model_name",
+        help="Nano Banana 2.1 para el día a día. Cambia a Pro si el texto o la composición no salen bien.",
     )
-    
-    generate_btn = st.button("🚀 Generar Prompts de Contenido", type="primary")
+    st.segmented_control(
+        "Resolución",
+        config.IMAGE_SIZES,
+        default=config.IMAGE_SIZES[0],
+        required=True,
+        key="size",
+        help="1K = 1024 px, suficiente para Instagram.",
+    )
+    model_id = config.IMAGE_MODELS[st.session_state.model_name]
+    st.caption(f"≈ US${config.estimate_cost(model_id, st.session_state.size):.3f} por imagen")
 
-# Initialize Session State
-if 'generated_content' not in st.session_state:
-    st.session_state.generated_content = None
+    output_dir = st.text_input("Carpeta de trabajos", value=config.OUTPUT_DIR)
 
-# Initialize Generator if key is present
-generator = None
+    st.divider()
+    st.subheader("Trabajos anteriores")
+    past = list_jobs(output_dir)
+    if past:
+        chosen = st.selectbox("Trabajo", past, format_func=os.path.basename, label_visibility="collapsed")
+        if st.button("Abrir trabajo", icon=":material/folder_open:", width="stretch"):
+            st.session_state.job = Job.load(chosen)
+            st.rerun()
+    else:
+        st.caption("Todavía no hay trabajos guardados.")
+
+    if st.session_state.get("job") and st.button("Nuevo trabajo", icon=":material/add:", width="stretch"):
+        del st.session_state["job"]
+        st.rerun()
+
+for msg in st.session_state.pop("flash", []):
+    st.toast(msg)
+
+client = None
 if api_key:
     try:
-        generator = ContentGenerator(api_key, text_model_id, image_model_id)
-    except Exception as e:
-        st.error(f"Error al inicializar el generador: {e}")
+        client = get_client(api_key)
+    except GenerationError as e:
+        st.error(str(e))
 
-# Helper for logging generation
-def log_generation(post_id, concept, option_num, prompt, file_path):
-    log_data = [{
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "brief_snippet": st.session_state.get('brief_used', '')[:30],
-        "post_id": post_id,
-        "concept": concept,
-        "option_num": option_num,
-        "prompt": prompt,
-        "file_path": file_path
-    }]
-    log_file = os.path.join(output_dir, "generation_log.csv")
-    df_new = pd.DataFrame(log_data)
-    if os.path.exists(log_file):
-        df_old = pd.read_csv(log_file)
-        df_final = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_final = df_new
-    df_final.to_csv(log_file, index=False)
+job: Job | None = st.session_state.get("job")
 
-# Logic Execution: Generate Prompts
-if generate_btn and generator and brief:
-    with st.spinner("Analizando brief y diseñando prompts estructurados..."):
-        try:
-            result_json = generator.generate_prompts(brief, guidelines)
-            st.session_state.generated_content = result_json
-            st.session_state.brief_used = brief
-            
-            # Initialize generated_images_data structure
-            st.session_state.generated_images_data = {}
-            posts = result_json.get('posts', [])
-            for post_idx, post in enumerate(posts):
-                st.session_state.generated_images_data[post_idx] = {
-                    'id': post.get('id', post_idx + 1),
-                    'concept': post.get('concept', f"Post {post_idx+1}"),
-                    'description': post.get('description', ''),
-                    'options': []
-                }
-                for i, prompt_data in enumerate(post.get('options', [])):
-                    prompt = prompt_data.get('prompt', str(prompt_data)) if isinstance(prompt_data, dict) else str(prompt_data)
-                    style_label = "Pop Educational" if i == 0 else ("Storybook" if i == 1 else "Creative Fusion")
-                    st.session_state.generated_images_data[post_idx]['options'].append({
-                        'style_name': style_label,
-                        'original_prompt': prompt,
-                        'current_prompt': prompt,
-                        'path': None,
-                        'filename': None,
-                        'status': 'pending',
-                        'message': 'Pendiente'
-                    })
-            
-            st.success("✅ Prompts generados exitosamente. Selecciona qué imágenes deseas generar a continuación.")
+# ---------------------------------------------------------------- paso 1: nuevo trabajo
+if job is None:
+    st.header("Nuevo trabajo")
+    if not client:
+        st.info("Añade tu API key de Gemini para empezar.")
+
+    tab_brief, tab_ref = st.tabs(["Desde el brief", "Desde una imagen de referencia"])
+    with tab_brief:
+        brief = st.text_area(
+            "Pega aquí el brief de la clienta",
+            height=320,
+            placeholder="Post 1 – Argentina\nTitle: English for Families\nIs your child in this class too?\n"
+            "¿Tu hijo también viene a esta clase?\n...",
+        )
+        style_options = ["auto"] + STYLE_KEYS
+        style_choice = st.selectbox(
+            "Estilo",
+            style_options,
+            format_func=lambda k: "Automático (lo sugiere la IA)" if k == "auto" else STYLES[k].name,
+        )
+        with st.expander("Ver los estilos disponibles"):
+            for s in STYLES.values():
+                st.markdown(f"**{s.name}**: {s.summary}")
+
+        if st.button(
+            "Interpretar brief",
+            type="primary",
+            icon=":material/auto_awesome:",
+            disabled=not (client and brief.strip()),
+        ):
+            with st.spinner("Leyendo el brief..."):
+                try:
+                    spec = client.parse_brief(brief, config.TEXT_MODEL)
+                except GenerationError as e:
+                    st.error(str(e))
+                    st.stop()
+            style = spec.suggested_style if style_choice == "auto" else style_choice
+            job_id, folder = new_job_folder(output_dir)
+            job = Job(
+                id=job_id,
+                folder=folder,
+                brief=brief,
+                style=style,
+                posts=[PostState(spec=p, style=style) for p in spec.posts],
+            )
+            job.save()
+            st.session_state.job = job
+            flash(f"Brief interpretado: {len(job.posts)} posts, estilo {STYLES[style].name}.")
             st.rerun()
-        except Exception as e:
-            st.error(f"Error generando prompts: {e}")
-            st.stop()
 
-# Main Processor Display Phase
-if st.session_state.generated_content and generator and 'generated_images_data' in st.session_state:
-    st.divider()
-    st.subheader("Resultados y Generación de Imágenes")
-    
-    # Global & Style Batch Generation Action Bar
-    st.markdown("### ⚡ Acciones de Generación Masiva")
-    b_col1, b_col2, b_col3, b_col4 = st.columns(4)
-    
-    def process_batch(option_filter=None):
-        """
-        Processes batch image generation.
-        option_filter: None for ALL pending images, or int (0, 1, 2) for specific style index.
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        pending_targets = []
-        
-        for post_idx, post_data in st.session_state.generated_images_data.items():
-            for i, opt in enumerate(post_data['options']):
-                if option_filter is not None and i != option_filter:
-                    continue
-                if opt['status'] != 'generated':
-                    pending_targets.append((post_idx, i))
-                    
-        if not pending_targets:
-            st.info("No hay imágenes pendientes en la selección elegida.")
-            return
+    with tab_ref:
+        st.caption(
+            "Para cuando la clienta pide «una imagen como esta, pero para otro país». "
+            "La imagen se envía al modelo como referencia de estilo y composición."
+        )
+        reference_form("ref_new", output_dir)
+    st.stop()
 
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        total = len(pending_targets)
-        
-        for idx, (post_idx, i) in enumerate(pending_targets):
-            post_data = st.session_state.generated_images_data[post_idx]
-            opt = post_data['options'][i]
-            
-            status_text.text(f"Generando Post {post_data['id']} (Opción {i+1}: {opt['style_name']})... [{idx+1}/{total}]")
-            
-            img_filename = f"post_{post_data['id']}_opt_{i+1}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-            img_path = os.path.join(output_dir, img_filename)
-            
-            success, msg = generator.generate_image(opt['current_prompt'], img_path)
-            
-            if success:
-                st.session_state.generated_images_data[post_idx]['options'][i].update({
-                    'path': img_path,
-                    'filename': img_filename,
-                    'status': 'generated',
-                    'message': 'Generado'
-                })
-                log_generation(post_data['id'], post_data['concept'], i+1, opt['current_prompt'], img_path)
-            else:
-                st.session_state.generated_images_data[post_idx]['options'][i].update({
-                    'status': 'error',
-                    'message': msg
-                })
-            
-            progress_bar.progress((idx + 1) / total)
-            
-        status_text.empty()
-        progress_bar.empty()
-        st.toast(f"✅ Procesamiento completado para {total} imagen(es).")
-        st.rerun()
+# ---------------------------------------------------------------- paso 2: posts e imágenes
+st.header(f"Trabajo {job.id}")
+st.caption(f"📁 {job.folder}   ·   Gasto estimado: US${job.total_cost():.2f}")
 
-    with b_col1:
-        if st.button("🚀 Generar TODAS las Imágenes", type="primary", use_container_width=True):
-            process_batch(option_filter=None)
-            
-    with b_col2:
-        if st.button("🎨 Generar TODAS (Opción 1: Pop)", use_container_width=True):
-            process_batch(option_filter=0)
-            
-    with b_col3:
-        if st.button("🖌️ Generar TODAS (Opción 2: Storybook)", use_container_width=True):
-            process_batch(option_filter=1)
-            
-    with b_col4:
-        if st.button("✨ Generar TODAS (Opción 3: Creative)", use_container_width=True):
-            process_batch(option_filter=2)
+with st.expander("Brief original"):
+    st.text(job.brief)
 
-    st.divider()
+style_posts = [i for i, p in enumerate(job.posts) if not p.is_reference]
+pending = [i for i, p in enumerate(job.posts) if not p.versions]
+all_posts = list(range(len(job.posts)))
+price = config.estimate_cost(model_id, st.session_state.size)
 
-    # Display Individual Posts Cards
-    for post_idx, post_data in st.session_state.generated_images_data.items():
-        st.markdown(f"### Post {post_data['id']}: {post_data['concept']}")
-        st.caption(post_data['description'])
-
-        cols = st.columns(3) # 3 options side by side
-
-        for i, option_data in enumerate(post_data['options']):
-            with cols[i]:
-                st.markdown(f"**Opción {i+1}: {option_data['style_name']}**")
-                st.code(option_data['current_prompt'], language="text")
-
-                # Single generate button if pending or error
-                if option_data['status'] in ['pending', 'error']:
-                    if st.button("🎨 Generar Imagen", key=f"gen_{post_data['id']}_{i+1}", type="secondary"):
-                        with st.spinner("Generando imagen..."):
-                            os.makedirs(output_dir, exist_ok=True)
-                            img_filename = f"post_{post_data['id']}_opt_{i+1}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-                            img_path = os.path.join(output_dir, img_filename)
-                            
-                            success, msg = generator.generate_image(option_data['current_prompt'], img_path)
-                            
-                            if success:
-                                st.session_state.generated_images_data[post_idx]['options'][i].update({
-                                    'path': img_path,
-                                    'filename': img_filename,
-                                    'status': 'generated',
-                                    'message': 'Generado'
-                                })
-                                log_generation(post_data['id'], post_data['concept'], i+1, option_data['current_prompt'], img_path)
-                                st.toast(f"✅ Imagen generada: Post {post_data['id']}, Opción {i+1}")
-                                st.rerun()
-                            else:
-                                st.session_state.generated_images_data[post_idx]['options'][i].update({
-                                    'status': 'error',
-                                    'message': msg
-                                })
-                                st.error(f"Error: {msg}")
-                                st.rerun()
-                
-                # If generated, display image & options
-                if option_data['status'] == 'generated' and option_data['path'] and os.path.exists(option_data['path']):
-                    st.image(option_data['path'], caption=f"Opción {i+1} ({option_data['style_name']})", use_container_width=True)
-                    st.success(option_data['message'])
-
-                    # Download button
-                    with open(option_data['path'], "rb") as file:
-                        st.download_button(
-                            label="⬇️ Descargar PNG",
-                            data=file,
-                            file_name=option_data['filename'],
-                            mime="image/png",
-                            key=f"dl_{post_data['id']}_{i+1}"
-                        )
-
-                    # Individual Regeneration
-                    regen_key = f"regen_{post_data['id']}_{i+1}"
-                    correction_prompt = st.text_input(
-                        "Instrucciones de corrección",
-                        key=f"input_{regen_key}",
-                        placeholder="Ej: Cambia el fondo a azul, haz el texto más grande..."
-                    )
-
-                    if st.button("🔄 Regenerar", key=f"btn_{regen_key}"):
-                        if correction_prompt:
-                            full_correction = f"{option_data['original_prompt']}\n\nCORRECTIONS: {correction_prompt}"
-
-                            with st.spinner("Regenerando imagen..."):
-                                new_filename = f"post_{post_data['id']}_opt_{i+1}_v2_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-                                new_path = os.path.join(output_dir, new_filename)
-
-                                regen_success, regen_msg = generator.generate_image(full_correction, new_path)
-
-                                if regen_success:
-                                    st.session_state.generated_images_data[post_idx]['options'][i].update({
-                                        'current_prompt': full_correction,
-                                        'path': new_path,
-                                        'filename': new_filename,
-                                        'status': 'generated',
-                                        'message': 'Imagen regenerada'
-                                    })
-                                    log_generation(post_data['id'], post_data['concept'], f"{i+1}_v2", full_correction, new_path)
-                                    st.toast("✅ Imagen regenerada correctamente.")
-                                    st.rerun()
-                                else:
-                                    st.error(f"Error al regenerar: {regen_msg}")
-                        else:
-                            st.warning("Ingresa instrucciones de corrección para regenerar.")
-                            
-                elif option_data['status'] == 'error':
-                    st.error(option_data['message'])
-                elif option_data['status'] == 'pending':
-                    st.info("⏳ Pendiente de generación")
-
-    st.divider()
-
-    # Zip Download section
-    generated_count = sum(
-        1 for post_data in st.session_state.generated_images_data.values() 
-        for opt in post_data['options'] 
-        if opt['status'] == 'generated'
+with st.container(horizontal=True, vertical_alignment="bottom"):
+    if style_posts:
+        new_style = st.selectbox(
+            "Estilo para todos los posts",
+            STYLE_KEYS,
+            index=STYLE_KEYS.index(job.style) if job.style in STYLE_KEYS else STYLE_KEYS.index(DEFAULT_STYLE),
+            format_func=lambda k: STYLES[k].name,
+            key=f"jobstyle_{job.id}",
+            width=260,
+        )
+        if new_style != job.style:
+            job.style = new_style
+            for idx in style_posts:
+                job.posts[idx].style = new_style
+                st.session_state.pop(f"style_{job.id}_{idx}", None)
+            job.save()
+            flash(f"Estilo cambiado a {STYLES[new_style].name}. Pulsa «Nueva versión de todas» para regenerar.")
+            st.rerun()
+    gen_pending = st.button(
+        f"Generar pendientes ({len(pending)}) · ≈US${price * len(pending):.2f}",
+        type="primary",
+        icon=":material/palette:",
+        disabled=not (client and pending),
     )
-    
-    if generated_count > 0:
-        st.info(f"📊 {generated_count} imagen(es) generada(s) hasta ahora")
-        
-        zip_path = "output_files.zip"
-        if os.path.exists(output_dir):
-            import shutil
-            shutil.make_archive("output_files", 'zip', output_dir)
-        
-        if os.path.exists(zip_path):
-            with open(zip_path, "rb") as fp:
-                st.download_button(
-                    label="📦 DESCARGAR TODO EN ZIP",
-                    data=fp,
-                    file_name="nano_banana_output.zip",
-                    mime="application/zip",
-                    type="primary",
-                    help="Descarga todas las imágenes generadas y el registro CSV en un archivo ZIP."
+    gen_all = st.button(
+        f"Nueva versión de todas ({len(all_posts)}) · ≈US${price * len(all_posts):.2f}",
+        icon=":material/autorenew:",
+        disabled=not (client and all_posts),
+        help="Genera otra imagen de cada post con el estilo y el modelo actuales. "
+        "Las anteriores se conservan como versiones.",
+    )
+    if any(p.current for p in job.posts):
+        st.download_button(
+            "Descargar todas (ZIP)",
+            data=job.zip_bytes(),
+            file_name=f"my_kiwi_{job.id}.zip",
+            mime="application/zip",
+            icon=":material/download:",
+        )
+
+if gen_pending:
+    generate_many(job, client, pending)
+if gen_all:
+    generate_many(job, client, all_posts)
+
+with st.expander("Añadir post desde una imagen de referencia", icon=":material/add_photo_alternate:"):
+    reference_form(f"ref_{job.id}", output_dir)
+
+st.divider()
+
+for i, post in enumerate(job.posts):
+    spec = post.spec
+    k = f"{job.id}_{i}"
+    with st.container(border=True):
+        left, right = st.columns([1.15, 1])
+
+        # ----- izquierda: ficha editable
+        with left:
+            st.subheader(f"Post {spec.number}" + (f" · {spec.country}" if spec.country else ""))
+
+            if post.is_reference:
+                ref = job.read_reference(i)
+                st.caption("Basado en imagen de referencia")
+                if ref:
+                    st.image(ref, width=220, alt=f"Referencia del post {spec.number}")
+                with st.expander("Instrucciones y texto", expanded=not post.versions):
+                    with st.form(f"form_{k}"):
+                        instructions = st.text_area("Qué cambiar respecto a la referencia", spec.scene, height=120)
+                        texts = st.text_area(
+                            "Texto exacto (una línea por elemento)", "\n".join(spec.extra_text), height=80
+                        )
+                        aspect = st.selectbox(
+                            "Formato", config.ASPECT_RATIOS, index=config.ASPECT_RATIOS.index(spec.aspect_ratio)
+                        )
+                        if st.form_submit_button("Guardar cambios", icon=":material/save:"):
+                            post.spec = spec.model_copy(
+                                update=dict(scene=instructions, extra_text=lines(texts), aspect_ratio=aspect)
+                            )
+                            job.save()
+                            flash(f"Post {spec.number} guardado. Genera una nueva versión para aplicarlo.")
+                            st.rerun()
+            else:
+                style_key = st.selectbox(
+                    "Estilo",
+                    STYLE_KEYS,
+                    index=STYLE_KEYS.index(post.style) if post.style in STYLE_KEYS else 0,
+                    format_func=lambda s: STYLES[s].name,
+                    key=f"style_{k}",
                 )
+                if style_key != post.style:
+                    post.style = style_key
+                    job.save()
+
+                with st.expander("Texto y escena", icon=":material/edit_note:", expanded=not post.versions):
+                    with st.form(f"form_{k}"):
+                        brand = st.text_input("Título de marca", spec.brand_title)
+                        subtitle = st.text_input("Subtítulo", spec.subtitle)
+                        phrases = st.text_area(
+                            "Frases principales (una por línea: frase | traducción)",
+                            phrases_to_text(spec.phrases),
+                            height=110,
+                        )
+                        c1, c2 = st.columns([1, 2])
+                        vlabel = c1.text_input("Etiqueta vocabulario", spec.vocabulary_label)
+                        vocab = c2.text_area(
+                            "Vocabulario (término = traducción)", vocab_to_text(spec.vocabulary), height=90
+                        )
+                        c3, c4 = st.columns(2)
+                        maori = c3.text_input("Palabra māori", spec.maori_word)
+                        aspect = c4.selectbox(
+                            "Formato", config.ASPECT_RATIOS, index=config.ASPECT_RATIOS.index(spec.aspect_ratio)
+                        )
+                        question = st.text_input("Pregunta inferior", spec.question)
+                        extra = st.text_area("Otro texto (una línea por elemento)", "\n".join(spec.extra_text), height=70)
+                        scene = st.text_area("Escena (en inglés)", spec.scene, height=140)
+                        if st.form_submit_button("Guardar cambios", icon=":material/save:"):
+                            post.spec = spec.model_copy(
+                                update=dict(
+                                    brand_title=brand,
+                                    subtitle=subtitle,
+                                    phrases=text_to_phrases(phrases),
+                                    vocabulary_label=vlabel,
+                                    vocabulary=text_to_vocab(vocab),
+                                    maori_word=maori,
+                                    aspect_ratio=aspect,
+                                    question=question,
+                                    extra_text=lines(extra),
+                                    scene=scene,
+                                )
+                            )
+                            job.save()
+                            flash(f"Post {spec.number} guardado. Genera una nueva versión para aplicarlo.")
+                            st.rerun()
+
+            with st.expander("Prompt", icon=":material/receipt_long:"):
+                auto = build_post_prompt(post.spec, post.style, post.is_reference)
+                custom = st.text_area(
+                    "Prompt (puedes editarlo; vacío = automático)",
+                    post.prompt_override or auto,
+                    height=260,
+                    # la clave cambia con el prompt, así el cuadro se refresca al editar la ficha
+                    key=f"prompt_{k}_{hash(auto + post.prompt_override)}",
+                )
+                b1, b2 = st.columns(2)
+                if b1.button("Usar este prompt", key=f"useprompt_{k}"):
+                    post.prompt_override = "" if custom.strip() == auto.strip() else custom
+                    job.save()
+                    st.rerun()
+                if post.prompt_override and b2.button("Volver al automático", key=f"resetprompt_{k}"):
+                    post.prompt_override = ""
+                    job.save()
+                    st.rerun()
+                if post.prompt_override:
+                    st.caption("⚠️ Usando prompt manual: los cambios en la ficha no se aplicarán.")
+
+        # ----- derecha: imagen
+        with right:
+            data = job.read_current(i)
+            if data:
+                st.image(data, width="stretch", alt=f"Imagen del post {spec.number}")
+                cur = post.current
+                st.caption(
+                    f"v{post.selected + 1} · {MODEL_NAMES.get(cur.model, cur.model)} · {cur.size}"
+                    + (f" · corrección: {cur.instruction}" if cur.instruction else "")
+                )
+                if len(post.versions) > 1:
+                    sel = st.selectbox(
+                        "Versión",
+                        range(len(post.versions)),
+                        index=post.selected,
+                        format_func=lambda v, p=post: f"v{v + 1}"
+                        + (" (corrección)" if p.versions[v].kind == "edit" else ""),
+                        key=f"ver_{k}_{len(post.versions)}",
+                    )
+                    if sel != post.selected:
+                        job.select(i, sel)
+                        st.rerun()
+            else:
+                st.info("Sin imagen todavía.")
+
+            a1, a2 = st.columns(2)
+            if a1.button(
+                "Nueva versión" if data else "Generar",
+                icon=":material/autorenew:" if data else ":material/palette:",
+                key=f"gen_{k}",
+                disabled=not client,
+                width="stretch",
+            ):
+                with st.spinner("Generando..."):
+                    try:
+                        prompt = prompt_for(post)
+                        png = client.generate_image(
+                            prompt, model_id, post.spec.aspect_ratio, st.session_state.size, job.read_reference(i)
+                        )
+                        job.add_version(i, png, make_version("generate", prompt))
+                        st.rerun()
+                    except GenerationError as e:
+                        st.error(str(e))
+            if data:
+                a2.download_button(
+                    "Descargar",
+                    data=data,
+                    file_name=job.final_name(i),
+                    mime="image/png",
+                    icon=":material/download:",
+                    key=f"dl_{k}",
+                    width="stretch",
+                )
+                with st.form(f"edit_{k}", clear_on_submit=True):
+                    instruction = st.text_input(
+                        "Corregir esta imagen",
+                        placeholder="Ej: haz el globo más grande y cambia el cielo a atardecer",
+                    )
+                    if (
+                        st.form_submit_button("Aplicar corrección", icon=":material/edit:", disabled=not client)
+                        and instruction.strip()
+                    ):
+                        with st.spinner("Corrigiendo..."):
+                            try:
+                                png = client.edit_image(
+                                    data, instruction, model_id, post.spec.aspect_ratio, st.session_state.size
+                                )
+                                job.add_version(
+                                    i, png, make_version("edit", build_edit_prompt(instruction), instruction)
+                                )
+                                st.rerun()
+                            except GenerationError as e:
+                                st.error(str(e))

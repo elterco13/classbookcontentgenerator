@@ -1,88 +1,70 @@
-# 🍌 Nano Banana Content Automator
+# 🥝 My Kiwi Studio
 
-Herramienta de automatización para generar contenido de redes sociales (prompts e imágenes) para **My Kiwi Languages** usando Gemini AI.
+Genera las imágenes de redes sociales de **My Kiwi Languages** a partir del brief de la clienta, siempre con el mismo estilo, personaje y tipografía.
 
-## 🚀 Características
+## Cómo funciona
 
-- **Generación automática de prompts** usando Gemini 2.5 Flash Lite
-- **Generación de imágenes** con Gemini 3 Pro Image Preview (Nano Banana)
-- **Regeneración individual** con instrucciones de corrección personalizadas
-- **Registro completo** de todas las generaciones en CSV
-- **Interfaz simple** con Streamlit
+1. **Pegas el brief.** Gemini lo convierte en una ficha por post: título de marca, subtítulo, frases bilingües, vocabulario, palabra māori, pregunta y escena.
+2. **Revisas las fichas.** Puedes corregir cualquier texto antes de generar. El texto de la imagen sale de la ficha, copiado tal cual.
+3. **Generas las imágenes** con **Nano Banana 2.1** o **Nano Banana Pro**, que eliges en la barra lateral.
+4. **Corriges** con una instrucción ("haz el globo más grande"): se edita la imagen existente en vez de empezar de cero. Cada intento queda como versión y puedes volver a cualquiera.
+5. **Variedad:** cambia el estilo o el modelo y pulsa «Nueva versión de todas». Las imágenes anteriores siguen disponibles como versiones.
+6. **Desde una imagen de referencia:** para los pedidos del tipo «una imagen como esta, pero para Canadá». Subes la imagen, escribes qué cambiar y, si quieres, el texto exacto. La imagen se envía al modelo como referencia. Puedes crear un trabajo solo con eso o añadir el post a un trabajo abierto.
+7. **Descargas** cada imagen o todas en un ZIP. Además, todo queda guardado en `trabajos/DD-MM-YY/` (`01.png`, `02.png`… más `versiones/` y `job.json`) y puedes reabrir trabajos anteriores.
 
-## 📋 Requisitos
+## Estilos
 
-- Python 3.8+
-- API Key de Google Gemini ([Obtener aquí](https://aistudio.google.com/apikey))
+Están definidos como texto fijo en [`kiwi/styles.py`](kiwi/styles.py), a partir de los posts entregados en 2026. No se envían imágenes de referencia, así que cada imagen solo paga su propio prompt.
 
-## 🛠️ Instalación Local
+| Estilo | Cuándo |
+|---|---|
+| Storybook acuarela | Familias, comunidad, salud, escuela, vocabulario y palabra māori |
+| Editorial geométrico | Trabajo, destinos, estudiar en NZ, LinkedIn, campañas |
+| Marco cultural | Frases de conversación con fuerte identidad del país |
+| Cartoon vibrante | Posts simples con una o dos frases |
 
-1. Clona el repositorio:
+Para ajustar un estilo o el personaje, edita ese archivo. El prompt final se construye en [`kiwi/prompt_builder.py`](kiwi/prompt_builder.py) y se puede ver (y editar a mano) en la app, en "🧾 Prompt".
+
+## Instalación
+
+Necesitas Python 3.11 o superior y una API key de Gemini con facturación activa. Los modelos de imagen no tienen nivel gratuito.
+
 ```bash
-git clone https://github.com/elterco13/classbookcontentgenerator.git
-cd classbookcontentgenerator
-```
-
-2. Instala las dependencias:
-```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 ```
 
-3. Configura tu API Key:
-   - Crea un archivo `.env` en la raíz del proyecto
-   - Agrega: `GOOGLE_API_KEY=tu_api_key_aqui`
+Abre `.env` y pega tu clave en `GOOGLE_API_KEY=`. Luego:
 
-4. Ejecuta la aplicación:
 ```bash
 streamlit run app.py
 ```
 
-## ☁️ Deployment en Streamlit Cloud
+## Costes aproximados (noviembre de 2026)
 
-1. Haz fork de este repositorio
-2. Ve a [share.streamlit.io](https://share.streamlit.io)
-3. Conecta tu repositorio de GitHub
-4. En **Advanced settings** → **Secrets**, agrega:
-```toml
-GOOGLE_API_KEY = "tu_api_key_aqui"
+| Modelo | 1K | 2K | 4K |
+|---|---|---|---|
+| Nano Banana 2.1 | US$0.034 | US$0.050 | US$0.113 |
+| Nano Banana Pro | US$0.134 | US$0.134 | US$0.24 |
+
+Una tarea de 6 posts a 1K con Nano Banana 2.1 cuesta unos US$0.20. Interpretar el brief usa `gemini-3.8-flash`, que tiene nivel gratuito. La app muestra el gasto estimado de cada trabajo.
+
+## Publicar en Streamlit Community Cloud
+
+1. Sube la rama a GitHub y, en [share.streamlit.io](https://share.streamlit.io), crea la app con `app.py` como archivo principal y Python 3.11 o superior.
+2. En **Advanced settings → Secrets** pega:
+   ```toml
+   GOOGLE_API_KEY = "tu_clave"
+   ```
+3. **Haz la app privada** (Settings → Sharing) e invita solo a quien deba usarla. La app usa tu clave, así que cualquiera con el enlace podría gastar créditos.
+
+En la nube los archivos se borran cuando la app se reinicia o se duerme, así que **descarga el ZIP al terminar cada trabajo**. El historial de trabajos solo se conserva en la versión local.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
 ```
-5. ¡Deploy!
-
-## 📖 Uso
-
-1. **Ingresa tu API Key** en la barra lateral (o configúrala en `.env`)
-2. **Revisa/edita las guías de marca** en el área de texto
-3. **Pega el brief del cliente** en el campo correspondiente
-4. **Haz clic en "🚀 Generar Contenido"**
-5. **Espera** mientras se generan los prompts e imágenes
-6. **Regenera imágenes individuales** si necesitas correcciones
-
-## 📁 Estructura del Proyecto
-
-```
-content_automation_tool/
-├── app.py                    # Interfaz Streamlit
-├── logic.py                  # Lógica de generación (Gemini API)
-├── requirements.txt          # Dependencias Python
-├── brand_guidelines.txt      # Guías de marca predeterminadas
-├── .env                      # Variables de entorno (no incluido en repo)
-└── output/                   # Carpeta de salida (generada automáticamente)
-    ├── *.png                 # Imágenes generadas
-    └── generation_log.csv    # Registro de generaciones
-```
-
-## 🎨 Modelos Utilizados
-
-- **Texto**: `gemini-2.5-flash-lite` (generación de prompts)
-- **Imagen**: `gemini-3-pro-image-preview` (Nano Banana Pro)
-  - Resolución: 1024x1024 (1:1)
-  - Mejor renderizado de texto
-  - Proceso de "pensamiento" para mejor calidad
-
-## 📝 Licencia
-
-MIT License - Siéntete libre de usar y modificar este proyecto.
-
-## 🤝 Contribuciones
-
-Las contribuciones son bienvenidas. Por favor abre un issue primero para discutir cambios mayores.

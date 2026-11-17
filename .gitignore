@@ -54,7 +54,12 @@ output/
 Thumbs.db
 
 # Test files
-test_*.py
+/test_*.py
 check_sdk.py
 list_models.py
 test_nano.py
+
+# App v2
+trabajos/
+.pytest_cache/
+output_files.zip
